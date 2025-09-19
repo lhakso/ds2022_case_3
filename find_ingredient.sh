@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+export CSVKIT_FIELD_SIZE_LIMIT=$((1024 * 1024 * 1024))
+FIELD_SIZE_LIMIT="$CSVKIT_FIELD_SIZE_LIMIT"
+
 usage() {
     cat <<'USAGE'
 Usage: ./find_ingredient.sh -i "<ingredient>" -d /path/to/folder
@@ -87,9 +90,16 @@ if ! headers=$(csvcut -t -n "$csv_file" 2>/dev/null); then
     exit 0
 fi
 
+declare -A header_map=()
+while IFS= read -r header_line; do
+    [[ -z "$header_line" ]] && continue
+    name="${header_line#*: }"
+    header_map["$name"]=1
+done <<<"$headers"
+
 missing_cols=()
 for col in ingredients_text product_name code; do
-    if ! grep -Fqw "$col" <<<"$headers"; then
+    if [[ -z "${header_map[$col]:-}" ]]; then
         missing_cols+=("$col")
     fi
 done
@@ -136,10 +146,10 @@ while IFS=$'\t' read -r name code; do
     printf '%s\t%s\n' "$name" "$code"
     matches=$((matches + 1))
 done < <(
-    csvcut -t -c ingredients_text,product_name,code "$csv_file" \
-    | csvgrep -t -c ingredients_text -r "$pattern" \
-    | csvcut -c product_name,code \
-    | csvformat -T \
+    csvcut -z "$FIELD_SIZE_LIMIT" -t -c ingredients_text,product_name,code "$csv_file" \
+    | csvgrep -z "$FIELD_SIZE_LIMIT" -c ingredients_text -r "$pattern" \
+    | csvcut -z "$FIELD_SIZE_LIMIT" -c product_name,code \
+    | csvformat -z "$FIELD_SIZE_LIMIT" -T \
     | tail -n +2
 )
 
